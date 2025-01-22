@@ -29,7 +29,7 @@ class TMDBService {
   private async handleApiError(error: any) {
     if (error.response) {
       if (error.response.status === 401) {
-        console.error('Invalid TMDB API key. Please check your environment variables.');
+        throw new Error('Invalid TMDB API key. Please check your environment variables.');
       }
       throw new Error(`TMDB API Error: ${error.response.status} - ${error.response.data.status_message || error.message}`);
     }
@@ -64,7 +64,7 @@ class TMDBService {
       );
       return trailer ? trailer.key : null;
     } catch (error) {
-      await this.handleApiError(error);
+      console.error('Error fetching movie trailer:', error);
       return null;
     }
   }

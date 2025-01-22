@@ -40,7 +40,8 @@ const MovieFeed: React.FC = () => {
         setError(null);
         const fetchedMovies = await tmdbService.getMoviesWithTrailers();
         if (fetchedMovies.length === 0) {
-          setError('Не удалось загрузить фильмы. Пожалуйста, проверьте подключение к интернету и попробуйте снова.');
+          setError('Не удалось загрузить фильмы. Пожалуйста, проверьте API ключ и подключение к интернету.');
+          return;
         }
         setMovies(fetchedMovies);
       } catch (error) {
@@ -55,10 +56,18 @@ const MovieFeed: React.FC = () => {
 
   const loadMoreMovies = async () => {
     try {
+      setLoading(true);
       const newMovies = await tmdbService.getMoviesWithTrailers();
+      if (newMovies.length === 0) {
+        setError('Не удалось загрузить больше фильмов');
+        return;
+      }
       setMovies(prevMovies => [...prevMovies, ...newMovies]);
     } catch (error) {
       console.error('Error loading more movies:', error);
+      setError(error instanceof Error ? error.message : 'Произошла ошибка при загрузке фильмов');
+    } finally {
+      setLoading(false);
     }
   };
 
