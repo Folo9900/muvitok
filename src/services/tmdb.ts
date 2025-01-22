@@ -20,39 +20,50 @@ class TMDBService {
   constructor() {
     const apiKey = import.meta.env.VITE_TMDB_API_KEY;
     if (!apiKey) {
+      console.error('TMDB API key not found in environment variables');
       throw new Error('TMDB API key not found. Please set VITE_TMDB_API_KEY environment variable.');
     }
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.themoviedb.org/3';
+    console.log('TMDBService initialized successfully');
   }
 
   private async handleApiError(error: any) {
     if (error.response) {
-      if (error.response.status === 401) {
+      const status = error.response.status;
+      const message = error.response.data?.status_message || error.message;
+      
+      if (status === 401) {
+        console.error('Invalid TMDB API key:', this.apiKey);
         throw new Error('Invalid TMDB API key. Please check your environment variables.');
       }
-      throw new Error(`TMDB API Error: ${error.response.status} - ${error.response.data.status_message || error.message}`);
+      
+      console.error(`TMDB API Error (${status}):`, message);
+      throw new Error(`TMDB API Error: ${status} - ${message}`);
     }
+    console.error('Network Error:', error.message);
     throw error;
   }
 
   async getTrendingMovies(): Promise<Movie[]> {
     try {
+      console.log('Fetching trending movies...');
       const response = await axios.get(`${this.baseUrl}/trending/movie/day`, {
         params: {
           api_key: this.apiKey,
           language: 'ru-RU'
         }
       });
+      console.log('Successfully fetched trending movies');
       return response.data.results;
     } catch (error) {
-      await this.handleApiError(error);
-      return [];
+      return await this.handleApiError(error);
     }
   }
 
   async getMovieTrailer(movieId: number): Promise<string | null> {
     try {
+      console.log(`Fetching trailer for movie ${movieId}...`);
       const response = await axios.get(`${this.baseUrl}/movie/${movieId}/videos`, {
         params: {
           api_key: this.apiKey
@@ -62,6 +73,7 @@ class TMDBService {
       const trailer = videos.find((video: any) => 
         video.type === 'Trailer' && video.site === 'YouTube'
       );
+      console.log(`Trailer ${trailer ? 'found' : 'not found'} for movie ${movieId}`);
       return trailer ? trailer.key : null;
     } catch (error) {
       console.error('Error fetching movie trailer:', error);
@@ -123,6 +135,7 @@ class TMDBService {
 
   async getMoviesWithTrailers(): Promise<Movie[]> {
     try {
+      console.log('Getting movies with trailers...');
       const trendingMovies = await this.getTrendingMovies();
       const moviesWithTrailers = await Promise.all(
         trendingMovies.map(async (movie) => {
@@ -134,6 +147,7 @@ class TMDBService {
           } as Movie;
         })
       );
+      console.log(`Successfully processed ${moviesWithTrailers.length} movies with trailers`);
       return moviesWithTrailers;
     } catch (error) {
       await this.handleApiError(error);
