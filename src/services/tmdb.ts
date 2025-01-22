@@ -11,7 +11,8 @@ export interface Movie {
   vote_average: number;
   poster_path: string;
   backdrop_path: string;
-  video_key?: string;
+  video_key: string | null;
+  liked: boolean;
 }
 
 class TMDBService {
@@ -80,6 +81,7 @@ class TMDBService {
       return {
         ...response.data,
         video_key: trailerKey,
+        liked: false
       };
     } catch (error) {
       console.error('Error fetching movie details:', error);

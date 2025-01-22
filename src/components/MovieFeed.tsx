@@ -32,58 +32,21 @@ const MovieFeed: React.FC = () => {
   };
 
   useEffect(() => {
-    loadInitialMovies();
+    const fetchMovies = async () => {
+      try {
+        const movies = await tmdbService.getMoviesWithTrailers();
+        setMovies(movies.map(movie => ({ ...movie, liked: false })));
+      } catch (error) {
+        console.error('Error fetching movies:', error);
+      }
+    };
+    fetchMovies();
   }, []);
-
-  const loadInitialMovies = async () => {
-    try {
-      setLoading(true);
-      const moviesWithTrailers = await tmdbService.getMoviesWithTrailers();
-      
-      // Перемешиваем массив фильмов
-      const shuffledMovies = [...moviesWithTrailers].sort(() => Math.random() - 0.5);
-      
-      setMovies(shuffledMovies);
-      setError(null);
-
-      // Предзагрузка следующих видео
-      const nextMovies = shuffledMovies.slice(0, 10);
-      nextMovies.forEach(movie => {
-        if (movie.video_key) {
-          const videoUrl = `https://www.youtube.com/watch?v=${movie.video_key}`;
-          videoCacheService.preloadVideo(videoUrl);
-        }
-      });
-    } catch (error) {
-      console.error('Error loading movies:', error);
-      setError('Ошибка загрузки фильмов');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadMoreMovies = async () => {
     try {
-      const moviesWithTrailers = await tmdbService.getMoviesWithTrailers();
-      
-      // Перемешиваем новые фильмы
-      const shuffledNewMovies = [...moviesWithTrailers].sort(() => Math.random() - 0.5);
-      
-      setMovies(prevMovies => {
-        // Фильтруем новые фильмы, исключая те, которые уже есть
-        const existingIds = new Set(prevMovies.map(m => m.id));
-        const uniqueNewMovies = shuffledNewMovies.filter(movie => !existingIds.has(movie.id));
-        return [...prevMovies, ...uniqueNewMovies];
-      });
-
-      // Предзагрузка следующих видео
-      const nextMovies = shuffledNewMovies.slice(0, 10);
-      nextMovies.forEach(movie => {
-        if (movie.video_key) {
-          const videoUrl = `https://www.youtube.com/watch?v=${movie.video_key}`;
-          videoCacheService.preloadVideo(videoUrl);
-        }
-      });
+      const newMovies = await tmdbService.getMoviesWithTrailers();
+      setMovies(prevMovies => [...prevMovies, ...newMovies.map(movie => ({ ...movie, liked: false }))]);
     } catch (error) {
       console.error('Error loading more movies:', error);
     }
