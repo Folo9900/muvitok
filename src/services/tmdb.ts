@@ -50,7 +50,7 @@ class TMDBService {
     return newArray;
   }
 
-  private async handleApiError(error: any) {
+  private async handleApiError(error: any): Promise<Movie[]> {
     if (axios.isAxiosError(error)) {
       if (error.response) {
         const status = error.response.status;

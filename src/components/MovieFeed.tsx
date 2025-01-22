@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, IconButton, Typography, CircularProgress, Button, useTheme, useMediaQuery } from '@mui/material';
 import { Favorite, FavoriteBorder, Comment, VolumeOff, VolumeUp, Refresh } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,6 +10,7 @@ import type { Movie } from '../services/tmdb';
 export default function MovieFeed() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isInitialMount = useRef(true);
   
   const [movies, setMovies] = useState<Movie[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -17,7 +18,7 @@ export default function MovieFeed() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFullDescription, setShowFullDescription] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(() => storageService.getSoundState());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchMovies = useCallback(async (refresh = false) => {
@@ -37,6 +38,7 @@ export default function MovieFeed() {
       
       setMovies(fetchedMovies);
       setCurrentIndex(0);
+      console.log('Successfully fetched movies:', fetchedMovies.length);
     } catch (error) {
       console.error('Error fetching movies:', error);
       setError(error instanceof Error ? error.message : 'Произошла ошибка при загрузке фильмов');
@@ -46,20 +48,35 @@ export default function MovieFeed() {
     }
   }, []);
 
+  // Инициализация при монтировании
   useEffect(() => {
-    fetchMovies();
+    if (isInitialMount.current) {
+      console.log('Initial mount, fetching movies...');
+      isInitialMount.current = false;
+      fetchMovies();
+    }
   }, [fetchMovies]);
 
+  // Сохранение состояния звука
+  useEffect(() => {
+    if (!isInitialMount.current) {
+      console.log('Saving sound state:', isMuted);
+      storageService.setSoundState(isMuted);
+    }
+  }, [isMuted]);
+
   const handleRefresh = () => {
+    console.log('Refreshing movies...');
     setIsRefreshing(true);
     fetchMovies(true);
   };
 
   const currentMovie = movies[currentIndex];
 
-  const handleLike = () => {
+  const handleLike = useCallback(() => {
     if (!currentMovie) return;
     
+    console.log('Toggling like for movie:', currentMovie.title);
     const isNowLiked = storageService.toggleLikedMovie(currentMovie);
     setMovies(prevMovies => 
       prevMovies.map(movie => 
@@ -68,15 +85,16 @@ export default function MovieFeed() {
           : movie
       )
     );
-  };
+  }, [currentMovie]);
 
-  const handleSwipe = (direction: 'up' | 'down') => {
+  const handleSwipe = useCallback((direction: 'up' | 'down') => {
+    console.log('Swiping:', direction);
     if (direction === 'up' && currentIndex < movies.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else if (direction === 'down' && currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
     }
-  };
+  }, [currentIndex, movies.length]);
 
   if (loading) {
     return (
@@ -169,7 +187,7 @@ export default function MovieFeed() {
                 <iframe
                   width="100%"
                   height="100%"
-                  src={`https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1&playsinline=1`}
+                  src={`https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1&playsinline=1&rel=0`}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   style={{
                     border: 'none',
