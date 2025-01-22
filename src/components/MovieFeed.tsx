@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Box, IconButton, Typography, Fade, CircularProgress, Button } from '@mui/material';
-import { Favorite, FavoriteBorder, Comment } from '@mui/icons-material';
+import { Favorite, FavoriteBorder, Comment, VolumeOff, VolumeUp } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import Comments from './Comments';
 import { tmdbService } from '../services/tmdb';
-import { videoCacheService } from '../services/video-cache';
-import { favoritesService } from '../services/favorites'; // Import favoritesService
+import { storageService } from '../services/storage';
 
 interface Movie {
   id: number;
@@ -25,13 +24,29 @@ const MovieFeed: React.FC = () => {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [likedMovies, setLikedMovies] = useState<number[]>([]); // Add likedMovies state
+  const [likedMovies, setLikedMovies] = useState<number[]>([]);
   const [showFullDescription, setShowFullDescription] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+
+  // Функция для перемешивания массива
+  const shuffleArray = (array: any[]) => {
+    const newArray = [...array];
+    for (let i = newArray.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+    }
+    return newArray;
+  };
 
   const getFirstSentence = (text: string) => {
     const match = text.match(/^.*?[.!?](?:\s|$)/);
     return match ? match[0].trim() : text;
   };
+
+  useEffect(() => {
+    // Загружаем избранные фильмы при монтировании компонента
+    setLikedMovies(storageService.getLikedMovies());
+  }, []);
 
   useEffect(() => {
     const fetchMovies = async () => {
@@ -40,10 +55,11 @@ const MovieFeed: React.FC = () => {
         setError(null);
         const fetchedMovies = await tmdbService.getMoviesWithTrailers();
         if (fetchedMovies.length === 0) {
-          setError('Не удалось загрузить фильмы. Пожалуйста, проверьте API ключ и подключение к интернету.');
+          setError('Не удалось загрузить фильмы');
           return;
         }
-        setMovies(fetchedMovies);
+        // Перемешиваем фильмы перед отображением
+        setMovies(shuffleArray(fetchedMovies));
       } catch (error) {
         console.error('Error fetching movies:', error);
         setError(error instanceof Error ? error.message : 'Произошла ошибка при загрузке фильмов');
@@ -71,24 +87,20 @@ const MovieFeed: React.FC = () => {
     }
   };
 
-  const handleLike = async (movieId: number) => {
-    try {
-      const isFavorite = await favoritesService.isFavorite(movieId);
-      if (isFavorite) {
-        await favoritesService.removeFromFavorites(movieId);
-      } else {
-        await favoritesService.addToFavorites(movieId);
-      }
-      setLikedMovies(prev => {
-        if (prev.includes(movieId)) {
-          return prev.filter(id => id !== movieId);
-        } else {
-          return [...prev, movieId];
-        }
-      });
-    } catch (error) {
-      console.error('Error updating favorites:', error);
-    }
+  const handleLike = () => {
+    if (!currentMovie) return;
+    
+    const isNowLiked = storageService.toggleLikedMovie(currentMovie.id);
+    setLikedMovies(storageService.getLikedMovies());
+    
+    // Обновляем состояние текущего фильма
+    setMovies(prevMovies => 
+      prevMovies.map(movie => 
+        movie.id === currentMovie.id 
+          ? { ...movie, liked: isNowLiked }
+          : movie
+      )
+    );
   };
 
   const handleSwipe = async (direction: 'up' | 'down') => {
@@ -140,23 +152,41 @@ const MovieFeed: React.FC = () => {
         }}
       >
         {currentMovie.video_key ? (
-          <iframe
-            width="100%"
-            height="100%"
-            src={`https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=1&controls=0&modestbranding=1`}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            style={{
-              border: 'none',
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '200vw',
-              height: '200vh',
-              objectFit: 'cover',
-              pointerEvents: 'none'
-            }}
-          />
+          <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+            <iframe
+              width="100%"
+              height="100%"
+              src={`https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1`}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              style={{
+                border: 'none',
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '100vw',
+                height: '100vh',
+                objectFit: 'cover',
+                pointerEvents: 'none'
+              }}
+            />
+            <IconButton
+              onClick={() => setIsMuted(!isMuted)}
+              sx={{
+                position: 'absolute',
+                top: 16,
+                right: 16,
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                color: 'white',
+                '&:hover': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)'
+                },
+                zIndex: 2
+              }}
+            >
+              {isMuted ? <VolumeOff /> : <VolumeUp />}
+            </IconButton>
+          </Box>
         ) : (
           <Box sx={{ 
             width: '100%', 
@@ -177,67 +207,49 @@ const MovieFeed: React.FC = () => {
             left: 0,
             right: 0,
             background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-            padding: 2,
+            padding: { xs: 1, sm: 2 },
             zIndex: 1
           }}
         >
-          <Typography variant="h6" gutterBottom>
+          <Typography variant="h6" sx={{ fontSize: { xs: '1.1rem', sm: '1.25rem' } }} gutterBottom>
             {currentMovie.title}
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            {showFullDescription ? currentMovie.overview : getFirstSentence(currentMovie.overview)}
-            {currentMovie.overview !== getFirstSentence(currentMovie.overview) && (
-              <Button
-                onClick={() => setShowFullDescription(!showFullDescription)}
-                sx={{ color: 'primary.main', textTransform: 'none', ml: 1 }}
-              >
-                {showFullDescription ? 'Свернуть' : 'Читать далее'}
-              </Button>
-            )}
-          </Typography>
-          {showFullDescription && (
-            <Box
-              sx={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                bgcolor: 'rgba(0,0,0,0.8)',
-                zIndex: 2,
-                p: 2,
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-              }}
-              onClick={() => setShowFullDescription(false)}
-            >
-              <Typography variant="h6" gutterBottom>
-                {currentMovie.title}
-              </Typography>
-              <Typography variant="body1">
-                {currentMovie.overview}
-              </Typography>
-            </Box>
-          )}
-          <Typography variant="subtitle1" color="white">
-            Рейтинг: {currentMovie.vote_average}/10
-          </Typography>
-          <Box
-            sx={{
-              position: 'absolute',
-              right: 16,
-              bottom: 100,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-              zIndex: 1
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              mb: 1,
+              fontSize: { xs: '0.875rem', sm: '1rem' },
+              display: '-webkit-box',
+              WebkitLineClamp: showFullDescription ? 'unset' : 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden'
             }}
+            onClick={() => setShowFullDescription(!showFullDescription)}
           >
-            <IconButton onClick={() => handleLike(currentMovie.id)} sx={{ color: 'white' }}>
-              {likedMovies.includes(currentMovie.id) ? <Favorite color="error" /> : <FavoriteBorder />}
+            {currentMovie.overview}
+          </Typography>
+
+          <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+            <IconButton
+              onClick={handleLike}
+              sx={{
+                color: 'white',
+                '&:hover': { color: '#ff4081' }
+              }}
+            >
+              {likedMovies.includes(currentMovie.id) ? (
+                <Favorite sx={{ color: '#ff4081' }} />
+              ) : (
+                <FavoriteBorder />
+              )}
             </IconButton>
-            <IconButton sx={{ color: 'white' }} onClick={() => setCommentsOpen(true)}>
+            <IconButton
+              onClick={() => setCommentsOpen(true)}
+              sx={{
+                color: 'white',
+                '&:hover': { color: '#2196f3' }
+              }}
+            >
               <Comment />
             </IconButton>
           </Box>
