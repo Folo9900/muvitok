@@ -1,24 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Box, IconButton, Typography, Fade, CircularProgress, Button, useTheme, useMediaQuery } from '@mui/material';
-import { Favorite, FavoriteBorder, Comment, VolumeOff, VolumeUp } from '@mui/icons-material';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Box, IconButton, Typography, CircularProgress, Button, useTheme, useMediaQuery } from '@mui/material';
+import { Favorite, FavoriteBorder, Comment, VolumeOff, VolumeUp, Refresh } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import Comments from './Comments';
 import { tmdbService } from '../services/tmdb';
 import { storageService } from '../services/storage';
+import type { Movie } from '../services/tmdb';
 
-interface Movie {
-  id: number;
-  title: string;
-  overview: string;
-  vote_average: number;
-  poster_path: string;
-  backdrop_path: string;
-  video_key: string | null;
-  liked: boolean;
-  genres?: { id: number; name: string }[];
-}
-
-const MovieFeed: React.FC = () => {
+export default function MovieFeed() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   
@@ -27,25 +16,27 @@ const MovieFeed: React.FC = () => {
   const [showComments, setShowComments] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [likedMovies, setLikedMovies] = useState<number[]>([]);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    setLikedMovies(storageService.getLikedMovies());
-  }, []);
-
-  const fetchMovies = async () => {
+  const fetchMovies = useCallback(async (refresh = false) => {
     try {
       setLoading(true);
       setError(null);
+      
+      if (refresh) {
+        tmdbService.clearSeenMovies();
+      }
+      
       const fetchedMovies = await tmdbService.getMoviesWithTrailers();
       if (fetchedMovies.length === 0) {
         setError('Не удалось загрузить фильмы');
         return;
       }
+      
       setMovies(fetchedMovies);
+      setCurrentIndex(0);
     } catch (error) {
       console.error('Error fetching movies:', error);
       setError(error instanceof Error ? error.message : 'Произошла ошибка при загрузке фильмов');
@@ -53,15 +44,15 @@ const MovieFeed: React.FC = () => {
       setLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchMovies();
-  }, []);
+  }, [fetchMovies]);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    fetchMovies();
+    fetchMovies(true);
   };
 
   const currentMovie = movies[currentIndex];
@@ -69,9 +60,7 @@ const MovieFeed: React.FC = () => {
   const handleLike = () => {
     if (!currentMovie) return;
     
-    const isNowLiked = storageService.toggleLikedMovie(currentMovie.id);
-    setLikedMovies(storageService.getLikedMovies());
-    
+    const isNowLiked = storageService.toggleLikedMovie(currentMovie);
     setMovies(prevMovies => 
       prevMovies.map(movie => 
         movie.id === currentMovie.id 
@@ -81,7 +70,7 @@ const MovieFeed: React.FC = () => {
     );
   };
 
-  const handleSwipe = async (direction: 'up' | 'down') => {
+  const handleSwipe = (direction: 'up' | 'down') => {
     if (direction === 'up' && currentIndex < movies.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else if (direction === 'down' && currentIndex > 0) {
@@ -128,6 +117,7 @@ const MovieFeed: React.FC = () => {
           color="primary"
           onClick={handleRefresh}
           disabled={isRefreshing}
+          startIcon={<Refresh />}
         >
           {isRefreshing ? 'Обновление...' : 'Попробовать снова'}
         </Button>
@@ -141,7 +131,7 @@ const MovieFeed: React.FC = () => {
 
   return (
     <motion.div
-      style={{ height: '100vh', overflow: 'hidden', position: 'relative' }}
+      style={{ height: '100vh', overflow: 'hidden', position: 'relative', touchAction: 'none' }}
       onPanEnd={(e, { offset, velocity }) => {
         const swipe = Math.abs(offset.y) * velocity.y;
         if (swipe < -1000) {
@@ -151,12 +141,13 @@ const MovieFeed: React.FC = () => {
         }
       }}
     >
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         <motion.div
           key={currentMovie.id}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
           style={{
             position: 'absolute',
             width: '100%',
@@ -169,7 +160,8 @@ const MovieFeed: React.FC = () => {
               position: 'relative',
               width: '100%',
               height: '100%',
-              bgcolor: 'black'
+              bgcolor: 'black',
+              overflow: 'hidden'
             }}
           >
             {currentMovie.video_key ? (
@@ -177,7 +169,7 @@ const MovieFeed: React.FC = () => {
                 <iframe
                   width="100%"
                   height="100%"
-                  src={`https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1`}
+                  src={`https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1&playsinline=1`}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   style={{
                     border: 'none',
@@ -191,22 +183,6 @@ const MovieFeed: React.FC = () => {
                     pointerEvents: 'none'
                   }}
                 />
-                <IconButton
-                  onClick={() => setIsMuted(!isMuted)}
-                  sx={{
-                    position: 'absolute',
-                    top: { xs: 8, sm: 16 },
-                    right: { xs: 8, sm: 16 },
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                    color: 'white',
-                    '&:hover': {
-                      backgroundColor: 'rgba(0, 0, 0, 0.7)'
-                    },
-                    zIndex: 2
-                  }}
-                >
-                  {isMuted ? <VolumeOff /> : <VolumeUp />}
-                </IconButton>
               </Box>
             ) : (
               <Box sx={{ 
@@ -221,6 +197,44 @@ const MovieFeed: React.FC = () => {
               </Box>
             )}
 
+            {/* Контролы в верхней части экрана */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: { xs: 1, sm: 2 },
+                background: 'linear-gradient(rgba(0,0,0,0.7), transparent)',
+                zIndex: 2
+              }}
+            >
+              <IconButton
+                onClick={handleRefresh}
+                sx={{
+                  color: 'white',
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                  '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.7)' }
+                }}
+              >
+                <Refresh />
+              </IconButton>
+              
+              <IconButton
+                onClick={() => setIsMuted(!isMuted)}
+                sx={{
+                  color: 'white',
+                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                  '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.7)' }
+                }}
+              >
+                {isMuted ? <VolumeOff /> : <VolumeUp />}
+              </IconButton>
+            </Box>
+
+            {/* Информация о фильме */}
             <Box
               sx={{
                 position: 'absolute',
@@ -229,6 +243,7 @@ const MovieFeed: React.FC = () => {
                 right: 0,
                 background: 'linear-gradient(transparent, rgba(0,0,0,0.9))',
                 padding: { xs: 2, sm: 3 },
+                paddingBottom: { xs: 4, sm: 5 },
                 zIndex: 1
               }}
             >
@@ -236,7 +251,8 @@ const MovieFeed: React.FC = () => {
                 variant="h6" 
                 sx={{ 
                   fontSize: { xs: '1.2rem', sm: '1.5rem' },
-                  mb: 1
+                  mb: 1,
+                  textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
                 }}
               >
                 {currentMovie.title}
@@ -272,7 +288,8 @@ const MovieFeed: React.FC = () => {
                   WebkitLineClamp: showFullDescription ? 'unset' : 3,
                   WebkitBoxOrient: 'vertical',
                   overflow: 'hidden',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  textShadow: '1px 1px 2px rgba(0,0,0,0.5)'
                 }}
                 onClick={() => setShowFullDescription(!showFullDescription)}
               >
@@ -288,10 +305,11 @@ const MovieFeed: React.FC = () => {
                   onClick={handleLike}
                   sx={{
                     color: 'white',
-                    '&:hover': { color: '#ff4081' }
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.7)' }
                   }}
                 >
-                  {likedMovies.includes(currentMovie.id) ? (
+                  {currentMovie.liked ? (
                     <Favorite sx={{ color: '#ff4081' }} />
                   ) : (
                     <FavoriteBorder />
@@ -301,7 +319,8 @@ const MovieFeed: React.FC = () => {
                   onClick={() => setShowComments(true)}
                   sx={{
                     color: 'white',
-                    '&:hover': { color: '#2196f3' }
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.7)' }
                   }}
                 >
                   <Comment />
@@ -319,6 +338,4 @@ const MovieFeed: React.FC = () => {
       />
     </motion.div>
   );
-};
-
-export default MovieFeed;
+}
