@@ -1,7 +1,5 @@
 import axios from 'axios';
 
-const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
-
 export interface Movie {
   id: number;
   title: string;
@@ -16,6 +14,7 @@ export interface Movie {
 class TMDBService {
   private apiKey: string;
   private baseUrl: string;
+  private axiosInstance;
 
   constructor() {
     const apiKey = import.meta.env.VITE_TMDB_API_KEY;
@@ -25,35 +24,47 @@ class TMDBService {
     }
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.themoviedb.org/3';
+    
+    this.axiosInstance = axios.create({
+      baseURL: this.baseUrl,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      params: {
+        api_key: this.apiKey,
+        language: 'ru-RU'
+      }
+    });
+    
     console.log('TMDBService initialized successfully');
   }
 
   private async handleApiError(error: any) {
-    if (error.response) {
-      const status = error.response.status;
-      const message = error.response.data?.status_message || error.message;
-      
-      if (status === 401) {
-        console.error('Invalid TMDB API key:', this.apiKey);
-        throw new Error('Invalid TMDB API key. Please check your environment variables.');
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const status = error.response.status;
+        const message = error.response.data?.status_message || error.message;
+        
+        if (status === 401) {
+          console.error('Invalid TMDB API key. Check your environment variables.');
+          throw new Error('Invalid TMDB API key. Please check your environment variables.');
+        }
+        
+        console.error(`TMDB API Error (${status}):`, message);
+        throw new Error(`TMDB API Error: ${status} - ${message}`);
+      } else if (error.request) {
+        console.error('Network Error: No response received');
+        throw new Error('Network Error: Unable to reach TMDB API');
       }
-      
-      console.error(`TMDB API Error (${status}):`, message);
-      throw new Error(`TMDB API Error: ${status} - ${message}`);
     }
-    console.error('Network Error:', error.message);
+    console.error('Unexpected Error:', error.message);
     throw error;
   }
 
   async getTrendingMovies(): Promise<Movie[]> {
     try {
       console.log('Fetching trending movies...');
-      const response = await axios.get(`${this.baseUrl}/trending/movie/day`, {
-        params: {
-          api_key: this.apiKey,
-          language: 'ru-RU'
-        }
-      });
+      const response = await this.axiosInstance.get('/trending/movie/day');
       console.log('Successfully fetched trending movies');
       return response.data.results;
     } catch (error) {
@@ -64,11 +75,7 @@ class TMDBService {
   async getMovieTrailer(movieId: number): Promise<string | null> {
     try {
       console.log(`Fetching trailer for movie ${movieId}...`);
-      const response = await axios.get(`${this.baseUrl}/movie/${movieId}/videos`, {
-        params: {
-          api_key: this.apiKey
-        }
-      });
+      const response = await this.axiosInstance.get(`/movie/${movieId}/videos`);
       const videos = response.data.results;
       const trailer = videos.find((video: any) => 
         video.type === 'Trailer' && video.site === 'YouTube'
@@ -83,11 +90,7 @@ class TMDBService {
 
   async getMovieRecommendations(movieId: number): Promise<Movie[]> {
     try {
-      const response = await axios.get(`${this.baseUrl}/movie/${movieId}/recommendations`, {
-        params: {
-          api_key: this.apiKey
-        }
-      });
+      const response = await this.axiosInstance.get(`/movie/${movieId}/recommendations`);
       return response.data.results;
     } catch (error) {
       await this.handleApiError(error);
@@ -96,14 +99,13 @@ class TMDBService {
   }
 
   getImageUrl(path: string, size: 'w500' | 'original' = 'w500'): string {
-    return `${IMAGE_BASE_URL}/${size}${path}`;
+    return `https://image.tmdb.org/t/p/${size}${path}`;
   }
 
   async searchMovies(query: string): Promise<Movie[]> {
     try {
-      const response = await axios.get(`${this.baseUrl}/search/movie`, {
+      const response = await this.axiosInstance.get('/search/movie', {
         params: {
-          api_key: this.apiKey,
           query
         }
       });
@@ -116,11 +118,7 @@ class TMDBService {
 
   async getMovieDetails(movieId: number): Promise<Movie> {
     try {
-      const response = await axios.get(`${this.baseUrl}/movie/${movieId}`, {
-        params: {
-          api_key: this.apiKey
-        }
-      });
+      const response = await this.axiosInstance.get(`/movie/${movieId}`);
       const trailerKey = await this.getMovieTrailer(movieId);
       return {
         ...response.data,
@@ -150,8 +148,11 @@ class TMDBService {
       console.log(`Successfully processed ${moviesWithTrailers.length} movies with trailers`);
       return moviesWithTrailers;
     } catch (error) {
-      await this.handleApiError(error);
-      return [];
+      console.error('Error in getMoviesWithTrailers:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to fetch movies with trailers');
     }
   }
 }
