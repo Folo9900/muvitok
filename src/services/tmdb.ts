@@ -99,7 +99,7 @@ class TMDBService {
             ...movie,
             video_key: trailerKey,
             liked: false
-          };
+          } as Movie;
         })
       );
       return moviesWithTrailers;

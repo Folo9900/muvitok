@@ -12,7 +12,9 @@ interface Movie {
   title: string;
   overview: string;
   vote_average: number;
-  video_key?: string;
+  poster_path: string;
+  backdrop_path: string;
+  video_key: string | null;
   liked: boolean;
 }
 
@@ -34,8 +36,8 @@ const MovieFeed: React.FC = () => {
   useEffect(() => {
     const fetchMovies = async () => {
       try {
-        const movies = await tmdbService.getMoviesWithTrailers();
-        setMovies(movies.map(movie => ({ ...movie, liked: false })));
+        const fetchedMovies = await tmdbService.getMoviesWithTrailers();
+        setMovies(fetchedMovies);
       } catch (error) {
         console.error('Error fetching movies:', error);
       }
@@ -46,7 +48,7 @@ const MovieFeed: React.FC = () => {
   const loadMoreMovies = async () => {
     try {
       const newMovies = await tmdbService.getMoviesWithTrailers();
-      setMovies(prevMovies => [...prevMovies, ...newMovies.map(movie => ({ ...movie, liked: false }))]);
+      setMovies(prevMovies => [...prevMovies, ...newMovies]);
     } catch (error) {
       console.error('Error loading more movies:', error);
     }
