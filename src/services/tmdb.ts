@@ -1,7 +1,5 @@
 import axios from 'axios';
 
-const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-const BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
 export interface Movie {
@@ -16,45 +14,72 @@ export interface Movie {
 }
 
 class TMDBService {
-  private api = axios.create({
-    baseURL: BASE_URL,
-    params: {
-      api_key: TMDB_API_KEY,
-      language: 'ru-RU',
-    },
-  });
+  private apiKey: string;
+  private baseUrl: string;
+
+  constructor() {
+    const apiKey = import.meta.env.VITE_TMDB_API_KEY;
+    if (!apiKey) {
+      throw new Error('TMDB API key not found. Please set VITE_TMDB_API_KEY environment variable.');
+    }
+    this.apiKey = apiKey;
+    this.baseUrl = 'https://api.themoviedb.org/3';
+  }
+
+  private async handleApiError(error: any) {
+    if (error.response) {
+      if (error.response.status === 401) {
+        console.error('Invalid TMDB API key. Please check your environment variables.');
+      }
+      throw new Error(`TMDB API Error: ${error.response.status} - ${error.response.data.status_message || error.message}`);
+    }
+    throw error;
+  }
 
   async getTrendingMovies(): Promise<Movie[]> {
     try {
-      const response = await this.api.get('/trending/movie/day');
+      const response = await axios.get(`${this.baseUrl}/trending/movie/day`, {
+        params: {
+          api_key: this.apiKey,
+          language: 'ru-RU'
+        }
+      });
       return response.data.results;
     } catch (error) {
-      console.error('Error fetching trending movies:', error);
-      throw error;
+      await this.handleApiError(error);
+      return [];
     }
   }
 
   async getMovieTrailer(movieId: number): Promise<string | null> {
     try {
-      const response = await this.api.get(`/movie/${movieId}/videos`);
+      const response = await axios.get(`${this.baseUrl}/movie/${movieId}/videos`, {
+        params: {
+          api_key: this.apiKey
+        }
+      });
       const videos = response.data.results;
       const trailer = videos.find((video: any) => 
         video.type === 'Trailer' && video.site === 'YouTube'
       );
       return trailer ? trailer.key : null;
     } catch (error) {
-      console.error('Error fetching movie trailer:', error);
+      await this.handleApiError(error);
       return null;
     }
   }
 
   async getMovieRecommendations(movieId: number): Promise<Movie[]> {
     try {
-      const response = await this.api.get(`/movie/${movieId}/recommendations`);
+      const response = await axios.get(`${this.baseUrl}/movie/${movieId}/recommendations`, {
+        params: {
+          api_key: this.apiKey
+        }
+      });
       return response.data.results;
     } catch (error) {
-      console.error('Error fetching movie recommendations:', error);
-      throw error;
+      await this.handleApiError(error);
+      return [];
     }
   }
 
@@ -64,19 +89,26 @@ class TMDBService {
 
   async searchMovies(query: string): Promise<Movie[]> {
     try {
-      const response = await this.api.get('/search/movie', {
-        params: { query },
+      const response = await axios.get(`${this.baseUrl}/search/movie`, {
+        params: {
+          api_key: this.apiKey,
+          query
+        }
       });
       return response.data.results;
     } catch (error) {
-      console.error('Error searching movies:', error);
-      throw error;
+      await this.handleApiError(error);
+      return [];
     }
   }
 
   async getMovieDetails(movieId: number): Promise<Movie> {
     try {
-      const response = await this.api.get(`/movie/${movieId}`);
+      const response = await axios.get(`${this.baseUrl}/movie/${movieId}`, {
+        params: {
+          api_key: this.apiKey
+        }
+      });
       const trailerKey = await this.getMovieTrailer(movieId);
       return {
         ...response.data,
@@ -84,7 +116,7 @@ class TMDBService {
         liked: false
       };
     } catch (error) {
-      console.error('Error fetching movie details:', error);
+      await this.handleApiError(error);
       throw error;
     }
   }
@@ -104,8 +136,8 @@ class TMDBService {
       );
       return moviesWithTrailers;
     } catch (error) {
-      console.error('Error getting movies with trailers:', error);
-      throw error;
+      await this.handleApiError(error);
+      return [];
     }
   }
 }

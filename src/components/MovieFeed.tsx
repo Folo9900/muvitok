@@ -36,10 +36,18 @@ const MovieFeed: React.FC = () => {
   useEffect(() => {
     const fetchMovies = async () => {
       try {
+        setLoading(true);
+        setError(null);
         const fetchedMovies = await tmdbService.getMoviesWithTrailers();
+        if (fetchedMovies.length === 0) {
+          setError('Не удалось загрузить фильмы. Пожалуйста, проверьте подключение к интернету и попробуйте снова.');
+        }
         setMovies(fetchedMovies);
       } catch (error) {
         console.error('Error fetching movies:', error);
+        setError(error instanceof Error ? error.message : 'Произошла ошибка при загрузке фильмов');
+      } finally {
+        setLoading(false);
       }
     };
     fetchMovies();
