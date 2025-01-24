@@ -10,7 +10,18 @@ export interface Movie {
   backdrop_path: string;
   video_key: string | null;
   liked: boolean;
-  genres?: { id: number; name: string }[];
+  genres?: Genre[];
+}
+
+export interface Genre {
+  id: number;
+  name: string;
+}
+
+interface MovieFilters {
+  query?: string;
+  genres?: number[];
+  minRating?: number;
 }
 
 class TMDBService {
@@ -18,6 +29,7 @@ class TMDBService {
   private baseUrl: string;
   private axiosInstance;
   private cachedMovies: Map<number, Movie>;
+  private cachedGenres: Genre[] | null = null;
 
   constructor() {
     const apiKey = import.meta.env.VITE_TMDB_API_KEY;
@@ -71,8 +83,22 @@ class TMDBService {
     throw error;
   }
 
+  async getGenres(): Promise<Genre[]> {
+    try {
+      if (this.cachedGenres) {
+        return this.cachedGenres;
+      }
+
+      const response = await this.axiosInstance.get('/genre/movie/list');
+      this.cachedGenres = response.data.genres;
+      return this.cachedGenres;
+    } catch (error) {
+      console.error('Error fetching genres:', error);
+      return [];
+    }
+  }
+
   private async getMovieDetails(movieId: number): Promise<Movie> {
-    // Проверяем кэш
     const cachedMovie = this.cachedMovies.get(movieId);
     if (cachedMovie) {
       console.log(`Using cached movie details for ID: ${movieId}`);
@@ -93,7 +119,6 @@ class TMDBService {
         liked: storageService.isMovieLiked(movieId)
       };
 
-      // Сохраняем в кэш
       this.cachedMovies.set(movieId, movie);
       
       return movie;
@@ -114,10 +139,43 @@ class TMDBService {
         .map((movie: any) => ({
           ...movie,
           liked: storageService.isMovieLiked(movie.id),
-          video_key: null // будет загружено позже
+          video_key: null
         }));
     } catch (error) {
       console.error('Error fetching recommendations:', error);
+      return [];
+    }
+  }
+
+  async searchMovies(filters: MovieFilters): Promise<Movie[]> {
+    try {
+      let endpoint = filters.query ? '/search/movie' : '/trending/movie/day';
+      let params: any = {};
+
+      if (filters.query) {
+        params.query = filters.query;
+      }
+
+      if (filters.genres && filters.genres.length > 0) {
+        params.with_genres = filters.genres.join(',');
+      }
+
+      if (filters.minRating) {
+        params['vote_average.gte'] = filters.minRating * 2; // Converting 5-star to 10-point scale
+      }
+
+      const response = await this.axiosInstance.get(endpoint, { params });
+      const seenMovies = storageService.getSeenMovies();
+      
+      return response.data.results
+        .filter((movie: any) => !seenMovies.includes(movie.id))
+        .map((movie: any) => ({
+          ...movie,
+          liked: storageService.isMovieLiked(movie.id),
+          video_key: null
+        }));
+    } catch (error) {
+      console.error('Error searching movies:', error);
       return [];
     }
   }
@@ -133,7 +191,7 @@ class TMDBService {
         .map((movie: any) => ({
           ...movie,
           liked: storageService.isMovieLiked(movie.id),
-          video_key: null // будет загружено позже
+          video_key: null
         }));
 
       console.log(`Successfully fetched ${movies.length} trending movies`);
@@ -172,27 +230,31 @@ class TMDBService {
     }
   }
 
-  async getMoviesWithTrailers(): Promise<Movie[]> {
+  async getMoviesWithTrailers(filters: MovieFilters = {}): Promise<Movie[]> {
     try {
       console.log('Getting movies with trailers...');
       
-      // Получаем избранные фильмы
-      const likedMovies = storageService.getLikedMovies();
       let movies: Movie[] = [];
       
-      // Если есть избранные фильмы, получаем рекомендации на их основе
-      if (likedMovies.length > 0) {
-        console.log('Found liked movies, getting recommendations...');
-        const randomLikedMovie = likedMovies[Math.floor(Math.random() * likedMovies.length)];
-        const recommendations = await this.getRecommendationsBasedOnMovie(randomLikedMovie.id);
-        movies = recommendations;
-      }
-      
-      // Если рекомендаций нет или их мало, добавляем трендовые фильмы
-      if (movies.length < 10) {
-        console.log('Getting additional trending movies...');
-        const trendingMovies = await this.getTrendingMovies();
-        movies = [...movies, ...trendingMovies];
+      // Если есть фильтры, используем поиск
+      if (filters.query || filters.genres?.length || filters.minRating) {
+        movies = await this.searchMovies(filters);
+      } else {
+        // Если нет фильтров, используем рекомендации и трендовые фильмы
+        const likedMovies = storageService.getLikedMovies();
+        
+        if (likedMovies.length > 0) {
+          console.log('Found liked movies, getting recommendations...');
+          const randomLikedMovie = likedMovies[Math.floor(Math.random() * likedMovies.length)];
+          const recommendations = await this.getRecommendationsBasedOnMovie(randomLikedMovie.id);
+          movies = recommendations;
+        }
+        
+        if (movies.length < 10) {
+          console.log('Getting additional trending movies...');
+          const trendingMovies = await this.getTrendingMovies();
+          movies = [...movies, ...trendingMovies];
+        }
       }
 
       // Перемешиваем фильмы и берем только первые 20
@@ -226,10 +288,10 @@ class TMDBService {
 
   clearCache(): void {
     this.cachedMovies.clear();
-    console.log('Movie cache cleared');
+    this.cachedGenres = null;
+    console.log('Cache cleared');
   }
 
-  // Метод для очистки истории просмотренных фильмов
   clearSeenMovies(): void {
     storageService.clearSeenMovies();
     this.clearCache();

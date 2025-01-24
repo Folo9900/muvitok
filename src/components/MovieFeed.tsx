@@ -7,6 +7,7 @@ import { tmdbService } from '../services/tmdb';
 import { storageService } from '../services/storage';
 import { videoCacheService } from '../services/video-cache';
 import type { Movie } from '../services/tmdb';
+import SearchBar from './SearchBar';
 
 export default function MovieFeed() {
   const theme = useTheme();
@@ -22,6 +23,11 @@ export default function MovieFeed() {
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [isMuted, setIsMuted] = useState(() => storageService.getSoundState());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [filters, setFilters] = useState({
+    query: '',
+    genres: [] as number[],
+    minRating: 0
+  });
 
   const fetchMovies = useCallback(async (refresh = false) => {
     try {
@@ -32,7 +38,7 @@ export default function MovieFeed() {
         tmdbService.clearSeenMovies();
       }
       
-      const fetchedMovies = await tmdbService.getMoviesWithTrailers();
+      const fetchedMovies = await tmdbService.getMoviesWithTrailers(filters);
       if (fetchedMovies.length === 0) {
         setError('Не удалось загрузить фильмы');
         return;
@@ -48,7 +54,7 @@ export default function MovieFeed() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [filters]);
 
   // Инициализация при монтировании
   useEffect(() => {
@@ -198,6 +204,12 @@ export default function MovieFeed() {
         }
       }}
     >
+      <SearchBar
+        onSearch={(query) => setFilters(prev => ({ ...prev, query }))}
+        onFilterChange={(genres) => setFilters(prev => ({ ...prev, genres }))}
+        onRatingChange={(rating) => setFilters(prev => ({ ...prev, minRating: rating }))}
+      />
+
       <AnimatePresence mode="wait">
         <motion.div
           key={currentMovie.id}
