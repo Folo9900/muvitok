@@ -8,27 +8,34 @@ class VideoCacheService {
     console.log('VideoCacheService initialized with max size:', maxSize);
   }
 
-  set(key: string, value: string): void {
+  set(key: string | null | undefined, value: string | null | undefined): void {
     if (!key || !value) {
       console.warn('Attempted to cache invalid video URL');
       return;
     }
 
     if (this.cache.size >= this.maxSize) {
-      const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
-      console.log('Cache full, removed oldest entry');
+      const firstKey = Array.from(this.cache.keys())[0];
+      if (firstKey) {
+        this.cache.delete(firstKey);
+        console.log('Cache full, removed oldest entry');
+      }
     }
 
     this.cache.set(key, value);
     console.log(`Cached video URL for key: ${key}`);
   }
 
-  get(key: string): string | undefined {
+  get(key: string | null | undefined): string | undefined {
+    if (!key) {
+      console.warn('Attempted to get video URL with invalid key');
+      return undefined;
+    }
     return this.cache.get(key);
   }
 
-  has(key: string): boolean {
+  has(key: string | null | undefined): boolean {
+    if (!key) return false;
     return this.cache.has(key);
   }
 
