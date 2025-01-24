@@ -1,16 +1,18 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Box, IconButton, Typography, CircularProgress, Button, useTheme, useMediaQuery } from '@mui/material';
 import { Favorite, FavoriteBorder, Comment, VolumeOff, VolumeUp, Refresh } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import Comments from './Comments';
 import { tmdbService } from '../services/tmdb';
 import { storageService } from '../services/storage';
+import { videoCacheService } from '../services/video-cache';
 import type { Movie } from '../services/tmdb';
 
 export default function MovieFeed() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const isInitialMount = useRef(true);
+  const prevMovieId = useRef<number | null>(null);
   
   const [movies, setMovies] = useState<Movie[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -65,13 +67,31 @@ export default function MovieFeed() {
     }
   }, [isMuted]);
 
-  const handleRefresh = () => {
+  // Кэширование видео URL
+  useEffect(() => {
+    if (currentMovie?.video_key) {
+      const videoId = currentMovie.video_key;
+      const videoUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1&playsinline=1&rel=0`;
+      videoCacheService.set(videoId, videoUrl);
+    }
+  }, [currentMovie?.video_key, isMuted]);
+
+  // Предзагрузка следующего видео
+  useEffect(() => {
+    const nextMovie = movies[currentIndex + 1];
+    if (nextMovie?.video_key) {
+      const videoUrl = `https://www.youtube.com/embed/${nextMovie.video_key}?autoplay=0&controls=0&modestbranding=1&playsinline=1&rel=0`;
+      videoCacheService.set(nextMovie.video_key, videoUrl);
+    }
+  }, [movies, currentIndex]);
+
+  const handleRefresh = useCallback(() => {
     console.log('Refreshing movies...');
     setIsRefreshing(true);
     fetchMovies(true);
-  };
+  }, [fetchMovies]);
 
-  const currentMovie = movies[currentIndex];
+  const currentMovie = useMemo(() => movies[currentIndex], [movies, currentIndex]);
 
   const handleLike = useCallback(() => {
     if (!currentMovie) return;
@@ -91,10 +111,24 @@ export default function MovieFeed() {
     console.log('Swiping:', direction);
     if (direction === 'up' && currentIndex < movies.length - 1) {
       setCurrentIndex(prev => prev + 1);
+      setShowFullDescription(false);
     } else if (direction === 'down' && currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
+      setShowFullDescription(false);
     }
   }, [currentIndex, movies.length]);
+
+  const handleToggleDescription = useCallback(() => {
+    setShowFullDescription(prev => !prev);
+  }, []);
+
+  const handleToggleMute = useCallback(() => {
+    setIsMuted(prev => !prev);
+  }, []);
+
+  const handleToggleComments = useCallback(() => {
+    setShowComments(prev => !prev);
+  }, []);
 
   if (loading) {
     return (
@@ -147,6 +181,11 @@ export default function MovieFeed() {
     return null;
   }
 
+  const videoUrl = currentMovie.video_key 
+    ? videoCacheService.get(currentMovie.video_key) || 
+      `https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1&playsinline=1&rel=0`
+    : null;
+
   return (
     <motion.div
       style={{ height: '100vh', overflow: 'hidden', position: 'relative', touchAction: 'none' }}
@@ -182,12 +221,12 @@ export default function MovieFeed() {
               overflow: 'hidden'
             }}
           >
-            {currentMovie.video_key ? (
+            {videoUrl ? (
               <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
                 <iframe
                   width="100%"
                   height="100%"
-                  src={`https://www.youtube.com/embed/${currentMovie.video_key}?autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1&playsinline=1&rel=0`}
+                  src={videoUrl}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   style={{
                     border: 'none',
@@ -241,7 +280,7 @@ export default function MovieFeed() {
               </IconButton>
               
               <IconButton
-                onClick={() => setIsMuted(!isMuted)}
+                onClick={handleToggleMute}
                 sx={{
                   color: 'white',
                   backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -309,7 +348,7 @@ export default function MovieFeed() {
                   cursor: 'pointer',
                   textShadow: '1px 1px 2px rgba(0,0,0,0.5)'
                 }}
-                onClick={() => setShowFullDescription(!showFullDescription)}
+                onClick={handleToggleDescription}
               >
                 {currentMovie.overview}
               </Typography>
@@ -334,7 +373,7 @@ export default function MovieFeed() {
                   )}
                 </IconButton>
                 <IconButton
-                  onClick={() => setShowComments(true)}
+                  onClick={handleToggleComments}
                   sx={{
                     color: 'white',
                     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -352,7 +391,7 @@ export default function MovieFeed() {
       <Comments
         movieId={currentMovie.id}
         open={showComments}
-        onClose={() => setShowComments(false)}
+        onClose={handleToggleComments}
       />
     </motion.div>
   );
