@@ -29,7 +29,7 @@ class TMDBService {
   private baseUrl: string;
   private axiosInstance;
   private cachedMovies: Map<number, Movie>;
-  private cachedGenres: Genre[] | null = null;
+  private cachedGenres: Genre[] = [];
 
   constructor() {
     const apiKey = import.meta.env.VITE_TMDB_API_KEY;
@@ -85,7 +85,7 @@ class TMDBService {
 
   async getGenres(): Promise<Genre[]> {
     try {
-      if (this.cachedGenres) {
+      if (this.cachedGenres.length > 0) {
         return this.cachedGenres;
       }
 
@@ -98,7 +98,7 @@ class TMDBService {
     }
   }
 
-  private async getMovieDetails(movieId: number): Promise<Movie> {
+  async getMovieDetails(movieId: number): Promise<Movie> {
     const cachedMovie = this.cachedMovies.get(movieId);
     if (cachedMovie) {
       console.log(`Using cached movie details for ID: ${movieId}`);
@@ -126,6 +126,11 @@ class TMDBService {
       console.error('Error fetching movie details:', error);
       throw error;
     }
+  }
+
+  getImageUrl(path: string, size: string = 'original'): string {
+    if (!path) return '';
+    return `https://image.tmdb.org/t/p/${size}${path}`;
   }
 
   private async getRecommendationsBasedOnMovie(movieId: number): Promise<Movie[]> {
@@ -197,7 +202,8 @@ class TMDBService {
       console.log(`Successfully fetched ${movies.length} trending movies`);
       return this.shuffleArray(movies);
     } catch (error) {
-      return await this.handleApiError(error);
+      console.error('Error fetching trending movies:', error);
+      return [];
     }
   }
 
@@ -207,14 +213,12 @@ class TMDBService {
       const response = await this.axiosInstance.get(`/movie/${movieId}/videos`);
       const videos = response.data.results;
       
-      // Ищем сначала русский трейлер
       let trailer = videos.find((video: any) => 
         video.type === 'Trailer' && 
         video.site === 'YouTube' &&
         video.iso_639_1 === 'ru'
       );
 
-      // Если русского нет, берем любой
       if (!trailer) {
         trailer = videos.find((video: any) => 
           video.type === 'Trailer' && 
@@ -236,11 +240,9 @@ class TMDBService {
       
       let movies: Movie[] = [];
       
-      // Если есть фильтры, используем поиск
       if (filters.query || filters.genres?.length || filters.minRating) {
         movies = await this.searchMovies(filters);
       } else {
-        // Если нет фильтров, используем рекомендации и трендовые фильмы
         const likedMovies = storageService.getLikedMovies();
         
         if (likedMovies.length > 0) {
@@ -257,10 +259,8 @@ class TMDBService {
         }
       }
 
-      // Перемешиваем фильмы и берем только первые 20
       const shuffledMovies = this.shuffleArray(movies).slice(0, 20);
       
-      // Получаем полную информацию о каждом фильме
       console.log('Fetching full details for movies...');
       const moviesWithDetails = await Promise.all(
         shuffledMovies.map(async (movie) => {
@@ -288,7 +288,7 @@ class TMDBService {
 
   clearCache(): void {
     this.cachedMovies.clear();
-    this.cachedGenres = null;
+    this.cachedGenres = [];
     console.log('Cache cleared');
   }
 

@@ -17,6 +17,7 @@ export default function MovieFeed() {
   
   const [movies, setMovies] = useState<Movie[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const currentMovie = useMemo(() => movies[currentIndex], [movies, currentIndex]);
   const [showComments, setShowComments] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,8 +97,6 @@ export default function MovieFeed() {
     setIsRefreshing(true);
     fetchMovies(true);
   }, [fetchMovies]);
-
-  const currentMovie = useMemo(() => movies[currentIndex], [movies, currentIndex]);
 
   const handleLike = useCallback(() => {
     if (!currentMovie) return;
